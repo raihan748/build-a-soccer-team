@@ -38,6 +38,13 @@ let state = {
   onlineTab: 'host',   // 'host' | 'join'
 };
 
+// Helper: Multi-tier high-availability CDN proxy for player face photos
+function getFaceUrl(player) {
+  if (!player || !player.faceUrl) return '';
+  const clean = player.faceUrl.replace(/^https?:\/\//, '');
+  return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=150&output=webp`;
+}
+
 // ═══════════════════════════════════════════════════════
 //  SCREEN MANAGEMENT
 // ═══════════════════════════════════════════════════════
@@ -307,7 +314,6 @@ function setupOnlineCallbacks() {
     state.isProcessing = false;
     state.botPending = false;
 
-    // Show header online badge
     const badge = document.getElementById('online-room-badge');
     const codeEl = document.getElementById('header-room-code');
     if (badge) badge.classList.remove('hidden');
@@ -451,14 +457,12 @@ function beginTurn() {
   state.drawnCards = [];
   state.selectedCard = null;
 
-  // Auto-switch pitch view to current manager
   state.viewingManagerId = mgr.id;
   renderManagerTabs();
   renderPitch();
   updateTurnIndicator();
   updateSpinSkipButtons();
 
-  // Clear spin area
   const area = document.getElementById('spin-cards-area');
   const myTurn = isMyTurn();
 
@@ -470,7 +474,6 @@ function beginTurn() {
       </div>
     </div>`;
 
-  // Bot AI or Pass & Play
   if (mgr.isBot) {
     handleBotTurn(mgr);
   } else if (state.mode === 'multi' && state.currentTurnIndex > 0) {
@@ -481,14 +484,12 @@ function beginTurn() {
 function advanceTurn() {
   if (state.isProcessing) return;
 
-  // Check if all managers are done
   const allDone = state.managers.every(m => m.done);
   if (allDone) {
     setTimeout(() => triggerTournament(), 800);
     return;
   }
 
-  // Find next incomplete manager
   let next = (state.currentTurnIndex + 1) % state.managers.length;
   let tries = 0;
   while (state.managers[next].done && tries < state.managers.length) {
@@ -885,6 +886,7 @@ function getPositionIcon(pos) {
 
 function buildMiniCard(player) {
   const cardClass = `card-${player.cardType}`;
+  const faceImg = getFaceUrl(player);
   return `
     <div class="fut-mini-card ${cardClass}">
       <div class="card-top">
@@ -893,9 +895,9 @@ function buildMiniCard(player) {
       </div>
       <img
         class="card-face"
-        src="${player.faceUrl}"
+        src="${faceImg}"
         alt="${player.name}"
-        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+        onerror="if(!this.dataset.triedOriginal){this.dataset.triedOriginal=1; this.src='${player.faceUrl}';}else if(!this.dataset.triedFutbin){this.dataset.triedFutbin=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.style.display='none'; this.nextElementSibling.style.display='flex';}"
         loading="lazy"
       />
       <div class="card-face-fallback" style="display:none">
@@ -922,6 +924,7 @@ function renderSpinCards(cards, dimAll) {
     const isDimmed = dimAll || (state.selectedCard !== null && !isSelected);
     const mgr = getCurrentManager();
     const canPlace = !dimAll && mgr && !mgr.isBot && myTurn && !!findBestSlot(mgr, player);
+    const faceImg = getFaceUrl(player);
 
     return `
       <div class="draft-card ${cardClass} ${isSelected ? 'selected' : ''} ${isDimmed ? 'dimmed' : ''} ${!canPlace && !dimAll ? 'opacity-60 cursor-not-allowed' : ''}"
@@ -937,9 +940,9 @@ function renderSpinCards(cards, dimAll) {
         <div class="dc-face-wrap">
           <img
             class="dc-face"
-            src="${player.faceUrl}"
+            src="${faceImg}"
             alt="${player.name}"
-            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            onerror="if(!this.dataset.triedOriginal){this.dataset.triedOriginal=1; this.src='${player.faceUrl}';}else if(!this.dataset.triedFutbin){this.dataset.triedFutbin=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.style.display='none'; this.nextElementSibling.style.display='flex';}"
             loading="lazy"
           />
           <div class="dc-face-fallback" style="display:none">
