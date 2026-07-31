@@ -181,14 +181,27 @@ body {
 .multi-name-input:focus { border-color: rgba(255,255,255,0.4); }
 
 /* ══════════════════════════════════════
-   PITCH / FORMATION
+   PITCH / FORMATION (FIXED HEIGHT LAYOUT)
 ══════════════════════════════════════ */
 .pitch-field {
-  background:
-    linear-gradient(180deg, #0d4d1a 0%, #0a3d14 50%, #0d4d1a 100%);
-  border: 2px solid rgba(255,255,255,0.12);
-  min-height: 500px;
+  background: linear-gradient(180deg, #0a3a12 0%, #07280d 50%, #0a3a12 100%);
+  border: 2px solid rgba(255,255,255,0.15);
+  height: 540px !important;
+  width: 100%;
   position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: inset 0 0 60px rgba(0,0,0,0.5), 0 8px 32px rgba(0,0,0,0.6);
+}
+
+#pitch-slots {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* Pitch grass stripes */
@@ -197,8 +210,8 @@ body {
   position: absolute; inset: 0;
   background: repeating-linear-gradient(
     180deg,
-    rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 40px,
-    transparent 40px, transparent 80px
+    rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 45px,
+    transparent 45px, transparent 90px
   );
   pointer-events: none;
 }
@@ -207,7 +220,7 @@ body {
 .pitch-field::after {
   content: '';
   position: absolute; left: 0; right: 0; top: 50%;
-  height: 1px; background: rgba(255,255,255,0.2);
+  height: 1px; background: rgba(255,255,255,0.25);
   pointer-events: none;
 }
 
@@ -215,19 +228,19 @@ body {
 .pitch-marking-center {
   position: absolute; left: 50%; top: 50%;
   transform: translate(-50%, -50%);
-  width: 80px; height: 80px;
-  border: 1px solid rgba(255,255,255,0.2);
+  width: 90px; height: 90px;
+  border: 1px solid rgba(255,255,255,0.25);
   border-radius: 50%;
   pointer-events: none; z-index: 1;
 }
 .pitch-marking-penalty {
   position: absolute; left: 50%; transform: translateX(-50%);
-  width: 60%; height: 30%;
-  border: 1px solid rgba(255,255,255,0.15);
+  width: 60%; height: 28%;
+  border: 1px solid rgba(255,255,255,0.2);
   pointer-events: none; z-index: 1;
 }
-.pitch-marking-penalty.top { bottom: 50%; }
-.pitch-marking-penalty.bottom { top: 50%; }
+.pitch-marking-penalty.top { top: 0; border-top: none; }
+.pitch-marking-penalty.bottom { bottom: 0; border-bottom: none; }
 
 /* ══════════════════════════════════════
    POSITION SLOT
@@ -248,14 +261,15 @@ body {
   border: 2px dashed rgba(255,255,255,0.3);
   border-radius: 10px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.3);
-  color: rgba(255,255,255,0.4);
-  font-family: 'Teko', sans-serif; font-size: 0.85rem; font-weight: 600;
+  background: rgba(0,0,0,0.4);
+  color: rgba(255,255,255,0.5);
+  font-family: 'Teko', sans-serif; font-size: 0.9rem; font-weight: 700;
   gap: 2px;
   transition: border-color 0.3s, background 0.3s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
-.slot-empty:hover { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.05); }
-.slot-empty .slot-icon { font-size: 1.1rem; opacity: 0.5; }
+.slot-empty:hover { border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.08); }
+.slot-empty .slot-icon { font-size: 1.1rem; opacity: 0.6; }
 
 /* ══════════════════════════════════════
    FUT PLAYER MINI-CARD
@@ -652,6 +666,7 @@ body {
    RESPONSIVE ADJUSTMENTS
 ══════════════════════════════════════ */
 @media (max-width: 640px) {
+  .pitch-field { height: 440px !important; }
   .pos-slot { width: 52px; }
   .slot-empty { width: 52px; height: 60px; font-size: 0.7rem; }
   .fut-mini-card { width: 52px; height: 65px; }
