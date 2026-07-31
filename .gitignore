@@ -1,0 +1,36 @@
+# Dependencies / node_modules
+node_modules/
+.npm/
+
+# Vercel local cache
+.vercel/
+
+# Local dev launcher (Windows only, not needed on Vercel)
+play.bat
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts (none in this project, but just in case)
+dist/
+build/
+out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files (security)
+.env
+.env.local
+.env.*.local
