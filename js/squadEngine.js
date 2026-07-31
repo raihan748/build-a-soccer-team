@@ -38,7 +38,7 @@ export function createManager(id, name, isBot = false) {
     id,
     name,
     isBot,
-    color: MANAGER_COLORS[id] || MANAGER_COLORS[0],
+    color: MANAGER_COLORS[typeof id === 'number' ? id : 0] || MANAGER_COLORS[0],
     slots,   // { LW: playerObj|null, ST: null, ... }
     spinsDone: 0,
     done: false,   // all 11 slots filled
@@ -65,6 +65,16 @@ export function findBestSlot(manager, player) {
   if (player.subPos) {
     const subMatch = empties.find(s => s.key === player.subPos || s.key.startsWith(player.subPos));
     if (subMatch) return subMatch.key;
+    // Map RM/LM to midfield slots
+    if (player.subPos === 'RM' || player.subPos === 'LM') {
+      const midFallback = empties.find(s => s.key === 'CM' || s.key === 'CDM' || s.key === 'CAM');
+      if (midFallback) return midFallback.key;
+    }
+    // Map CF to attacker slots
+    if (player.subPos === 'CF') {
+      const attFallback = empties.find(s => s.pos === 'ATT');
+      if (attFallback) return attFallback.key;
+    }
   }
 
   // 2. Fallback to any empty slot within the player's main position category (ATT, MID, DEF, GK)
@@ -99,9 +109,18 @@ export function calcChemistry(manager) {
 
   let bonus = 0;
 
+  // Normalize club name: strip (I), (Icon), (Legend) suffixes
+  function normalizeClub(club) {
+    if (!club || club === 'Free Agent') return null;
+    return club.replace(/\s*\((?:I|Icon|Legend)\)\s*$/i, '').trim();
+  }
+
   // Club chemistry (+8% per duplicate club)
   const clubCounts = {};
-  players.forEach(p => { clubCounts[p.club] = (clubCounts[p.club] || 0) + 1; });
+  players.forEach(p => {
+    const club = normalizeClub(p.club);
+    if (club) clubCounts[club] = (clubCounts[club] || 0) + 1;
+  });
   Object.values(clubCounts).forEach(count => {
     if (count >= 2) bonus += (count - 1) * 8;
   });

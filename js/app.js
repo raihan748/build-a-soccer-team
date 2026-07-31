@@ -254,7 +254,10 @@ window.handleJoinRoom = async function(presetCode = null) {
     const joinedCode = await onlineEngine.joinRoom(playerName, roomCode);
     showToast(`Connected to Room ${joinedCode}! Waiting for Host to start...`, 'success');
   } catch (err) {
-    showToast(`Connected to Room ${roomCode}! Waiting for Host...`, 'success');
+    showToast(err.message || 'Failed to connect to room. Check the code and try again.', 'error');
+    if (btnJoin) btnJoin.disabled = false;
+    if (statusBox) statusBox.classList.add('hidden');
+    return;
   }
 };
 
@@ -485,7 +488,7 @@ function beginTurn() {
 
   if (mgr.isBot) {
     handleBotTurn(mgr);
-  } else if (state.mode === 'multi' && state.currentTurnIndex > 0) {
+  } else if (state.mode === 'multi' && (state.currentTurnIndex > 0 || mgr.spinsDone > 0)) {
     showPassPlay(mgr);
   }
 }
@@ -581,11 +584,11 @@ async function handleBotTurn(mgr) {
     addDraftLog('bot', `🤖 ${mgr.name} skipped (no matching positions in drawn cards).`);
   }
 
-  state.botPending = false;
   renderPitch();
   renderManagerTabs();
   updatePoolCount();
   await delay(600);
+  state.botPending = false;
   hideBotLog();
   advanceTurn();
 }
@@ -610,6 +613,7 @@ window.handleSpin = function() {
   const drawn = drawCards(4);
   if (drawn.length === 0) {
     showToast('No more players in the pool!', 'warn');
+    state.hasSpun = true;
     handleSkip();
     return;
   }
@@ -908,7 +912,7 @@ function buildMiniCard(player) {
         class="card-face"
         src="${faceImg}"
         alt="${player.name}"
-        onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else if(!this.dataset.t3){this.dataset.t3=1; this.src='${fallbackBadge}';}"
+        onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const m='${player.faceUrl}'.match(/players\/(\d+)\/(\d+)/); const id=m?(m[1]+m[2]):'0'; this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.src='${fallbackBadge}';}"
         loading="lazy"
       />
       <div class="card-name">${player.name}</div>
@@ -951,7 +955,7 @@ function renderSpinCards(cards, dimAll) {
             class="dc-face"
             src="${faceImg}"
             alt="${player.name}"
-            onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else if(!this.dataset.t3){this.dataset.t3=1; this.src='${fallbackBadge}';}"
+            onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const m='${player.faceUrl}'.match(/players\/(\d+)\/(\d+)/); const id=m?(m[1]+m[2]):'0'; this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.src='${fallbackBadge}';}"
             loading="lazy"
           />
         </div>

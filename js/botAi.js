@@ -7,6 +7,9 @@ import { FORMATION_SLOTS, findBestSlot } from './squadEngine.js';
 // ── Bot decision: evaluate 4 drawn cards ──────────────
 // Returns { action: 'pick'|'skip', slotKey, playerIndex, reason }
 export function botDecide(manager, drawnCards) {
+  if (!manager || !manager.slots || !drawnCards || !Array.isArray(drawnCards)) {
+    return { action: 'skip', reason: 'Invalid input data.' };
+  }
   const emptySlots = FORMATION_SLOTS.filter(s => manager.slots[s.key] === null);
 
   if (emptySlots.length === 0) {
@@ -59,9 +62,10 @@ function getCriticalBonus(manager, pos) {
 
   // If GK slot is still empty, prioritize GK
   if (pos === 'GK' && countByPos['GK'] > 0) return 15;
-  // If no ATT drafted yet, prioritize attackers
-  const filledAtts = FORMATION_SLOTS.filter(s => s.pos === 'ATT' && manager.slots[s.key] !== null).length;
-  if (pos === 'ATT' && filledAtts === 0) return 8;
+  // Urgency for positions with many empty slots
+  if (pos === 'DEF' && countByPos['DEF'] >= 3) return 10;
+  if (pos === 'ATT' && countByPos['ATT'] >= 2) return 8;
+  if (pos === 'MID' && countByPos['MID'] >= 2) return 6;
   return 0;
 }
 

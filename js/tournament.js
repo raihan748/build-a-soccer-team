@@ -23,7 +23,7 @@ function simulateMatch(mgrA, mgrB) {
 
   // Generate realistic goal counts (0-5 goals each)
   // Base goals proportional to strength ratio
-  const ratio = randA / (randA + randB);
+  const ratio = randA / Math.max(1, randA + randB);
   const totalGoals = Math.floor(Math.random() * 6) + 1; // 1-6 total goals
   let goalsA = Math.round(totalGoals * ratio);
   let goalsB = totalGoals - goalsA;
@@ -100,7 +100,8 @@ export function runTournament(managers) {
     if (ptsDiff !== 0) return ptsDiff;
     const gdDiff = (b.gf - b.ga) - (a.gf - a.ga);
     if (gdDiff !== 0) return gdDiff;
-    return b.gf - a.gf;
+    if (b.gf !== a.gf) return b.gf - a.gf;
+    return a.name.localeCompare(b.name);
   });
 
   return { standings: sorted, matches };
@@ -120,7 +121,7 @@ export function launchVictoryCelebration(managerColor) {
   const colors = [hex, '#f59e0b', '#ffffff', '#10b981'];
 
   // Left cannon
-  confetti({
+  if (typeof confetti === 'function') confetti({
     particleCount: 80,
     spread: 70,
     origin: { x: 0.1, y: 0.6 },
@@ -130,7 +131,7 @@ export function launchVictoryCelebration(managerColor) {
 
   // Right cannon
   setTimeout(() => {
-    confetti({
+    if (typeof confetti === 'function') confetti({
       particleCount: 80,
       spread: 70,
       origin: { x: 0.9, y: 0.6 },
@@ -141,7 +142,7 @@ export function launchVictoryCelebration(managerColor) {
 
   // Center burst
   setTimeout(() => {
-    confetti({
+    if (typeof confetti === 'function') confetti({
       particleCount: 120,
       spread: 100,
       origin: { x: 0.5, y: 0.3 },
@@ -153,7 +154,7 @@ export function launchVictoryCelebration(managerColor) {
 
   // Trailing sparkle
   setTimeout(() => {
-    confetti({
+    if (typeof confetti === 'function') confetti({
       particleCount: 50,
       angle: 90,
       spread: 360,

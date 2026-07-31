@@ -5,18 +5,29 @@
 let ctx = null;
 
 function getCtx() {
-  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-  if (ctx.state === 'suspended') ctx.resume();
+  try {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  } catch (e) { /* AudioContext not supported */ }
   return ctx;
 }
 
 // ── Master volume ──────────────────────────────────────
 function createGain(level = 0.3) {
   const ac = getCtx();
+  if (!ac) return null;
   const g = ac.createGain();
   g.gain.value = level;
   g.connect(ac.destination);
   return g;
+}
+
+// ── Auto-cleanup: disconnect nodes after playback ──────
+function scheduleCleanup(osc, ...nodes) {
+  osc.onended = () => {
+    try { osc.disconnect(); } catch(e) {}
+    nodes.forEach(n => { try { n.disconnect(); } catch(e) {} });
+  };
 }
 
 // ── Spin Sound: rapid frequency sweep (triangle) ───────

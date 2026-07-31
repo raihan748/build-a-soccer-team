@@ -1,18 +1,20 @@
 // ═══════════════════════════════════════════════════════
-//  onlineEngine.js — Multi-Transport Realtime Engine
-//  Combines WebRTC PeerJS + BroadcastChannel + LocalStorage Sync
-//  Guarantees 100% multiplayer connection on all networks & tabs
+//  onlineEngine.js — WebRTC PeerJS + Multi-Transport Realtime Engine
+//  Includes Google STUN + TURN servers, Duplicate Protection & Fail-Safe Signaling
 // ═══════════════════════════════════════════════════════
 
 /* global Peer */
 
-const STUN_SERVERS = {
+const STUN_TURN_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+    // Free TURN Relay fallback for strict NAT/Mobile networks
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
   ]
 };
 
@@ -38,7 +40,6 @@ class OnlineEngine {
     this.onStatusChange = null;
   }
 
-  // Generate 4-char Room Code (e.g. FUT-8X9K)
   generateCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
@@ -55,10 +56,11 @@ class OnlineEngine {
     return clean.replace(/[^A-Z0-9]/g, '');
   }
 
-  // Setup BroadcastChannel & LocalStorage transport for instant multi-tab sync
   initLocalChannels(roomCode) {
-    const channelName = `fut_room_${this.normalizeCode(roomCode)}`;
-    
+    const clean = this.normalizeCode(roomCode);
+    if (!clean) return;
+    const channelName = `fut_room_${clean}`;
+
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         if (this.broadcastChannel) this.broadcastChannel.close();
@@ -69,7 +71,6 @@ class OnlineEngine {
       }
     }
 
-    // LocalStorage fallback event listener
     if (this.storageListener) window.removeEventListener('storage', this.storageListener);
     this.storageListener = (e) => {
       if (e.key === channelName && e.newValue) {
@@ -82,9 +83,10 @@ class OnlineEngine {
     window.addEventListener('storage', this.storageListener);
   }
 
-  // Send message over local channels
   sendLocal(data) {
-    const channelName = `fut_room_${this.normalizeCode(this.roomCode)}`;
+    if (!this.roomCode) return;
+    const clean = this.normalizeCode(this.roomCode);
+    const channelName = `fut_room_${clean}`;
     if (this.broadcastChannel) {
       try { this.broadcastChannel.postMessage(data); } catch (e) { /* ignore */ }
     }
@@ -98,11 +100,11 @@ class OnlineEngine {
 
     if (this.isHost) {
       if (data.type === 'JOIN_REQUEST') {
-        const existing = this.joinedPlayers.find(p => p.peerId === data.peerId);
+        const existing = this.joinedPlayers.find(p => p.peerId === data.peerId || p.name === data.name);
         if (existing) return;
 
         if (this.joinedPlayers.length >= this.maxPlayers) {
-          this.sendLocal({ type: 'JOIN_REJECTED', reason: 'Room is full!', _sender: this.myPeerId });
+          this.sendLocal({ type: 'JOIN_REJECTED', reason: 'Room is full!', targetPeerId: data.peerId, _sender: this.myPeerId });
           return;
         }
 
@@ -134,7 +136,6 @@ class OnlineEngine {
         if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
       } else if (data.type === 'GAME_ACTION') {
         if (this.onActionReceived) this.onActionReceived(data.action);
-        this.sendLocal({ ...data, _sender: this.myPeerId });
       }
     } else {
       if (data.type === 'JOIN_ACCEPTED' && data.targetPeerId === this.myPeerId) {
@@ -142,6 +143,8 @@ class OnlineEngine {
         this.joinedPlayers = data.players;
         this.roomCode = data.roomCode;
         if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
+      } else if (data.type === 'JOIN_REJECTED' && data.targetPeerId === this.myPeerId) {
+        if (this.onStatusChange) this.onStatusChange(`Rejected: ${data.reason}`);
       } else if (data.type === 'LOBBY_UPDATE') {
         this.joinedPlayers = data.players;
         if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
@@ -153,9 +156,8 @@ class OnlineEngine {
     }
   }
 
-  // Initialize PeerJS instance
   initPeer(customId = null) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       this.myPeerId = customId || `peer_${Math.random().toString(36).substring(2, 9)}`;
 
       if (typeof Peer === 'undefined') {
@@ -164,17 +166,21 @@ class OnlineEngine {
       }
 
       try {
-        if (this.peer) try { this.peer.destroy(); } catch (e) { /* ignore */ }
+        if (this.peer) {
+          try { this.peer.destroy(); } catch (e) { /* ignore */ }
+        }
 
-        this.peer = new Peer(this.myPeerId, { debug: 1, config: STUN_SERVERS });
+        this.peer = new Peer(this.myPeerId, { debug: 1, config: STUN_TURN_SERVERS });
 
         this.peer.on('open', (id) => {
           this.myPeerId = id;
+          if (this.onStatusChange) this.onStatusChange('Connected to PeerJS cloud');
           resolve(id);
         });
 
         this.peer.on('error', (err) => {
-          console.warn('PeerJS cloud warning (falling back to Local Sync):', err.message);
+          console.warn('PeerJS network notice:', err.message);
+          if (this.onStatusChange) this.onStatusChange(`Network notice: ${err.type}`);
           resolve(this.myPeerId);
         });
 
@@ -197,14 +203,18 @@ class OnlineEngine {
     this.myId = 0;
     this.roomCode = this.generateCode();
 
-    const cleanCode = this.normalizeCode(this.roomCode);
-    await this.initPeer(`fut-room-host-${cleanCode.toLowerCase()}`);
-    this.initLocalChannels(this.roomCode);
-
+    // CRITICAL FIX: Initialize host player list BEFORE opening network sockets
     this.joinedPlayers = [
-      { id: 0, name: this.myPlayerName, peerId: this.myPeerId, isHost: true }
+      { id: 0, name: this.myPlayerName, peerId: null, isHost: true }
     ];
 
+    const cleanCode = this.normalizeCode(this.roomCode);
+    const hostPeerId = `fut-room-host-${cleanCode.toLowerCase()}`;
+    
+    await this.initPeer(hostPeerId);
+    this.joinedPlayers[0].peerId = this.myPeerId;
+
+    this.initLocalChannels(this.roomCode);
     return this.roomCode;
   }
 
@@ -222,20 +232,31 @@ class OnlineEngine {
     await this.initPeer(`fut-room-join-${Math.random().toString(36).substring(2, 7)}`);
     this.initLocalChannels(this.roomCode);
 
-    // Try PeerJS connection to host
     const targetPeerId = `fut-room-host-${cleanCode.toLowerCase()}`;
+
     if (this.peer) {
       try {
         const conn = this.peer.connect(targetPeerId, { reliable: true });
         this.hostConn = conn;
+
         conn.on('open', () => {
           conn.send({ type: 'JOIN_REQUEST', name: this.myPlayerName, peerId: this.myPeerId });
         });
+
         conn.on('data', (data) => this.handleMessageFromHost(data));
+
+        conn.on('close', () => {
+          if (this.onPlayerDisconnect) this.onPlayerDisconnect('Host disconnected');
+        });
+
+        conn.on('error', (err) => {
+          console.warn('Connection error to host:', err);
+        });
+
       } catch (e) { /* fallback to local */ }
     }
 
-    // Simultaneously send join request over Local BroadcastChannel
+    // Broadcast local join request for same-device multi-tab support
     this.sendLocal({
       type: 'JOIN_REQUEST',
       name: this.myPlayerName,
@@ -243,23 +264,18 @@ class OnlineEngine {
       _sender: this.myPeerId,
     });
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let checks = 0;
+      const maxChecks = 25; // 5 seconds
       const timer = setInterval(() => {
         checks++;
         if (this.joinedPlayers.length > 0) {
           clearInterval(timer);
           resolve(this.roomCode);
-        } else if (checks > 20) {
+        } else if (checks >= maxChecks) {
           clearInterval(timer);
-          // Default fallback join
-          this.joinedPlayers = [
-            { id: 0, name: 'Host Manager', peerId: 'host-id', isHost: true },
-            { id: 1, name: this.myPlayerName, peerId: this.myPeerId, isHost: false },
-          ];
-          this.myId = 1;
-          if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
-          resolve(this.roomCode);
+          // CRITICAL FIX: Eliminate phantom host! Throw error if no response from host
+          reject(new Error(`Could not find Room "${this.roomCode}". Ensure Host is online & code is correct.`));
         }
       }, 200);
     });
@@ -267,12 +283,17 @@ class OnlineEngine {
 
   handleIncomingConnection(conn) {
     if (!this.isHost) return;
+
     conn.on('data', (data) => {
       if (data.type === 'JOIN_REQUEST') {
+        const existing = this.joinedPlayers.find(p => p.peerId === data.peerId || p.name === data.name);
+        if (existing) return;
+
         if (this.joinedPlayers.length >= this.maxPlayers) {
           conn.send({ type: 'JOIN_REJECTED', reason: 'Room is full!' });
           return;
         }
+
         const newId = this.joinedPlayers.length;
         const newPlayer = { id: newId, name: data.name, peerId: data.peerId, isHost: false };
         this.joinedPlayers.push(newPlayer);
@@ -292,6 +313,18 @@ class OnlineEngine {
         this.handleClientAction(data);
       }
     });
+
+    conn.on('close', () => {
+      this.connections.delete(conn.peer);
+      this.joinedPlayers = this.joinedPlayers.filter(p => p.peerId !== conn.peer);
+      this.broadcast({ type: 'LOBBY_UPDATE', players: this.joinedPlayers });
+      if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
+      if (this.onPlayerDisconnect) this.onPlayerDisconnect(`Player ${conn.peer} left`);
+    });
+
+    conn.on('error', (err) => {
+      console.warn('Host connection error with peer:', conn.peer, err);
+    });
   }
 
   handleMessageFromHost(data) {
@@ -299,6 +332,8 @@ class OnlineEngine {
       this.myId = data.assignedId;
       this.joinedPlayers = data.players;
       if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
+    } else if (data.type === 'JOIN_REJECTED') {
+      if (this.onStatusChange) this.onStatusChange(`Rejected: ${data.reason}`);
     } else if (data.type === 'LOBBY_UPDATE') {
       this.joinedPlayers = data.players;
       if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
@@ -312,7 +347,6 @@ class OnlineEngine {
   handleClientAction(data) {
     if (data.type === 'GAME_ACTION') {
       this.broadcast(data);
-      this.sendLocal({ ...data, _sender: this.myPeerId });
       if (this.onActionReceived) this.onActionReceived(data.action);
     }
   }
@@ -331,7 +365,9 @@ class OnlineEngine {
       this.sendLocal(payload);
       if (this.onActionReceived) this.onActionReceived(action);
     } else {
-      if (this.hostConn && this.hostConn.open) this.hostConn.send(payload);
+      if (this.hostConn && this.hostConn.open) {
+        this.hostConn.send(payload);
+      }
       this.sendLocal(payload);
     }
   }
@@ -350,6 +386,10 @@ class OnlineEngine {
   }
 
   disconnect() {
+    if (this.roomCode) {
+      const clean = this.normalizeCode(this.roomCode);
+      try { localStorage.removeItem(`fut_room_${clean}`); } catch(e) {}
+    }
     if (this.peer) {
       try { this.peer.destroy(); } catch (e) { /* ignore */ }
       this.peer = null;
