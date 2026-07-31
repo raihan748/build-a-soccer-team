@@ -20,11 +20,11 @@
   <!-- Canvas Confetti -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
-  <!-- PeerJS for WebRTC Online P2P -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- PeerJS for WebRTC Online P2P (Cloudflare CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 
-  <!-- Custom Styles (Cache busted v3.0) -->
-  <link rel="stylesheet" href="css/styles.css?v=3.0" />
+  <!-- Custom Styles (Cache busted v4.0) -->
+  <link rel="stylesheet" href="css/styles.css?v=4.0" />
 
   <script>
     tailwind.config = {
@@ -233,7 +233,7 @@
 
         <div>
           <label class="block mb-2 text-sm font-semibold text-gray-300">Enter Room Code</label>
-          <input id="online-room-code-input" type="text" placeholder="e.g. FUT-8X9K" maxlength="10"
+          <input id="online-room-code-input" type="text" placeholder="e.g. FUT-8X9K or 8X9K" maxlength="10"
             class="w-full bg-white/5 border border-purple-500/40 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-400 uppercase font-mono text-center tracking-widest text-xl transition-colors" />
         </div>
 
@@ -526,9 +526,9 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
-       JS MODULES (Cache Busted v3.0)
+       JS MODULES (Cache Busted v4.0)
   ═══════════════════════════════════════════ -->
-  <script type="module" src="js/app.js?v=3.0"></script>
+  <script type="module" src="js/app.js?v=4.0"></script>
 
   <!-- Global helper functions called from HTML onclick attributes -->
   <script>
