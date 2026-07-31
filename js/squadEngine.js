@@ -3,12 +3,8 @@
 // ═══════════════════════════════════════════════════════
 
 // ── Formation: 4-3-3 slot definitions ─────────────────
-// Each slot: { key, label, pos, x (0-100%), y (0-100%) }
-// y=0 is top (attack), y=100 is bottom (defense/GK) on pitch view
-// We render pitch top=attack, bottom=GK (traditional soccer view)
-
 export const FORMATION_SLOTS = [
-  // Attackers  (row y≈15%)
+  // Attackers  (row y≈14%)
   { key:'LW',  label:'LW',  pos:'ATT', x:18,  y:14 },
   { key:'ST',  label:'ST',  pos:'ATT', x:50,  y:10 },
   { key:'RW',  label:'RW',  pos:'ATT', x:82,  y:14 },
@@ -60,20 +56,22 @@ export function isSquadComplete(manager) {
   return FORMATION_SLOTS.every(s => manager.slots[s.key] !== null);
 }
 
-// ── Find best empty slot for a player (by position match)
+// ── Find best empty slot for a player (STRICT POSITION ACCURACY)
 export function findBestSlot(manager, player) {
-  // Try exact position match first
   const empties = FORMATION_SLOTS.filter(s => manager.slots[s.key] === null);
   if (empties.length === 0) return null;
 
-  // Match by position category
-  const posMatch = empties.filter(s => s.pos === player.pos);
-  if (posMatch.length > 0) {
-    // Prefer slot with highest strategic priority
-    return posMatch[0].key;
+  // 1. Try exact sub-position match if player.subPos is defined (e.g. ST, LW, RW, CB, LB, RB, CAM, CDM, CM, GK)
+  if (player.subPos) {
+    const subMatch = empties.find(s => s.key === player.subPos || s.key.startsWith(player.subPos));
+    if (subMatch) return subMatch.key;
   }
 
-  // No matching position slot — can't place
+  // 2. Fallback to any empty slot within the player's main position category (ATT, MID, DEF, GK)
+  const posMatch = empties.find(s => s.pos === player.pos);
+  if (posMatch) return posMatch.key;
+
+  // 3. No position match available
   return null;
 }
 
@@ -95,21 +93,20 @@ export function calcAverageOvr(manager) {
 }
 
 // ── Calculate Team Chemistry (0–100) ──────────────────
-// +8% per duplicate club (shared club pairs), +6% per duplicate nationality
 export function calcChemistry(manager) {
   const players = getSquadPlayers(manager);
   if (players.length < 2) return 0;
 
   let bonus = 0;
 
-  // Club chemistry
+  // Club chemistry (+8% per duplicate club)
   const clubCounts = {};
   players.forEach(p => { clubCounts[p.club] = (clubCounts[p.club] || 0) + 1; });
   Object.values(clubCounts).forEach(count => {
     if (count >= 2) bonus += (count - 1) * 8;
   });
 
-  // Nationality chemistry
+  // Nationality chemistry (+6% per duplicate country)
   const natCounts = {};
   players.forEach(p => { natCounts[p.nat] = (natCounts[p.nat] || 0) + 1; });
   Object.values(natCounts).forEach(count => {
@@ -127,8 +124,6 @@ export function chemColor(chem) {
 }
 
 // ── Build turn order (round-robin) ────────────────────
-// managers = array of manager objects
-// Returns array of managerIds in draft order for one full round
 export function buildTurnOrder(managers) {
   return managers.map(m => m.id);
 }
