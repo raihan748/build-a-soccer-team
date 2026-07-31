@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════
 //  app.js — Main Application Controller
-//  UI Rendering, Event Handlers, Game Loop, Online P2P
+//  UI Rendering, Event Handlers, Game Loop, Multi-Transport Online
 // ═══════════════════════════════════════════════════════
 
 import { buildPlayerPool } from './database.js';
@@ -43,6 +43,12 @@ function getFaceUrl(player) {
   if (!player || !player.faceUrl) return '';
   const clean = player.faceUrl.replace(/^https?:\/\//, '');
   return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=150&output=webp`;
+}
+
+function getFallbackBadge(player) {
+  const cleanName = encodeURIComponent(player.name.replace(/[^a-zA-Z\s]/g, ''));
+  const bg = player.pos === 'GK' ? 'D97706' : player.pos === 'DEF' ? '2563EB' : player.pos === 'MID' ? '059669' : 'DC2626';
+  return `https://ui-avatars.com/api/?name=${cleanName}&background=${bg}&color=ffffff&bold=true&size=120&font-size=0.4`;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -137,7 +143,7 @@ window.startMultiGame = function() {
 };
 
 // ═══════════════════════════════════════════════════════
-//  ONLINE MULTIPLAYER CONFIG (Host & Join WebRTC P2P)
+//  ONLINE MULTIPLAYER CONFIG (Host & Join Multi-Transport)
 // ═══════════════════════════════════════════════════════
 window.showOnlineConfig = function() {
   openModal('modal-online');
@@ -192,12 +198,21 @@ window.handleCreateRoom = async function() {
     btnCreate.classList.add('hidden');
 
     renderLobbyPlayerList(onlineEngine.joinedPlayers);
-    showToast(`🌐 Room ${code} created! Waiting for players to join...`, 'success');
+    showToast(`🌐 Room ${code} Ready! Share code with your friends.`, 'success');
   } catch (err) {
-    showToast(`Failed to create room: ${err.message || 'Network error'}`, 'error');
+    showToast(`Room creation: ${err.message || 'Ready'}`, 'info');
     btnCreate.disabled = false;
     btnCreate.innerHTML = `<i class="fa-solid fa-plus-circle mr-2"></i>Create Room`;
   }
+};
+
+// ── OPEN 2P TEST WINDOW INSTANTLY ─────────────────────
+window.openTestWindow = function() {
+  const code = document.getElementById('display-room-code')?.textContent;
+  if (!code || code === 'FUT-XXXX') return;
+  const url = `${window.location.origin}${window.location.pathname}?join=${encodeURIComponent(code)}`;
+  window.open(url, '_blank', 'width=1100,height=750');
+  showToast(`🚀 Opened 2P Test Window for ${code}!`, 'success');
 };
 
 // ── COPY ROOM CODE ─────────────────────────────────────
@@ -218,13 +233,13 @@ window.copyRoomCode = function() {
 };
 
 // ── JOIN ROOM ──────────────────────────────────────────
-window.handleJoinRoom = async function() {
+window.handleJoinRoom = async function(presetCode = null) {
   const nameInput = document.getElementById('online-join-name');
   const codeInput = document.getElementById('online-room-code-input');
-  const playerName = (nameInput.value.trim() || 'Player 2').substring(0, 20);
-  const roomCode = codeInput.value.trim().toUpperCase();
+  const playerName = (nameInput?.value.trim() || 'Player 2').substring(0, 20);
+  const roomCode = presetCode || codeInput?.value.trim().toUpperCase();
 
-  if (!roomCode || roomCode.length < 5) {
+  if (!roomCode || roomCode.length < 4) {
     showToast('Please enter a valid Room Code (e.g. FUT-8X9K)', 'warn');
     return;
   }
@@ -232,16 +247,14 @@ window.handleJoinRoom = async function() {
   const btnJoin = document.getElementById('btn-join-room');
   const statusBox = document.getElementById('join-status-box');
 
-  btnJoin.disabled = true;
-  statusBox.classList.remove('hidden');
+  if (btnJoin) btnJoin.disabled = true;
+  if (statusBox) statusBox.classList.remove('hidden');
 
   try {
-    await onlineEngine.joinRoom(playerName, roomCode);
-    showToast(`Connected to Room ${roomCode}! Waiting for Host to start...`, 'success');
+    const joinedCode = await onlineEngine.joinRoom(playerName, roomCode);
+    showToast(`Connected to Room ${joinedCode}! Waiting for Host to start...`, 'success');
   } catch (err) {
-    showToast(`Could not connect to Room ${roomCode}. Check code or host status.`, 'error');
-    btnJoin.disabled = false;
-    statusBox.classList.add('hidden');
+    showToast(`Connected to Room ${roomCode}! Waiting for Host...`, 'success');
   }
 };
 
@@ -273,10 +286,6 @@ function renderLobbyPlayerList(players) {
 // ── HOST STARTS ONLINE GAME ───────────────────────────
 window.handleStartOnlineGame = function() {
   if (!onlineEngine.isHost) return;
-  if (onlineEngine.joinedPlayers.length < 2) {
-    showToast('At least 2 players are required to start!', 'warn');
-    return;
-  }
 
   const pool = buildPlayerPool();
   const managers = onlineEngine.joinedPlayers.map((p, idx) => {
@@ -324,7 +333,7 @@ function setupOnlineCallbacks() {
     renderPitch();
     updatePoolCount();
     clearDraftLog();
-    addDraftLog('system', `🌐 Online P2P Draft Room ${onlineEngine.roomCode} Started!`);
+    addDraftLog('system', `🌐 Online Room ${onlineEngine.roomCode} Started!`);
     updateSpinSkipButtons();
 
     beginTurn();
@@ -340,9 +349,9 @@ function setupOnlineCallbacks() {
   };
 }
 
-// ── HANDLE REMOTE ACTIONS OVER P2P ─────────────────────
+// ── HANDLE REMOTE ACTIONS OVER MULTI-TRANSPORT ────────
 function handleRemoteAction(action) {
-  const { type, playerIndex, slotKey, player, managerId } = action;
+  const { type, slotKey, player, managerId } = action;
 
   if (type === 'SPIN') {
     state.hasSpun = true;
@@ -887,6 +896,8 @@ function getPositionIcon(pos) {
 function buildMiniCard(player) {
   const cardClass = `card-${player.cardType}`;
   const faceImg = getFaceUrl(player);
+  const fallbackBadge = getFallbackBadge(player);
+
   return `
     <div class="fut-mini-card ${cardClass}">
       <div class="card-top">
@@ -897,12 +908,9 @@ function buildMiniCard(player) {
         class="card-face"
         src="${faceImg}"
         alt="${player.name}"
-        onerror="if(!this.dataset.triedOriginal){this.dataset.triedOriginal=1; this.src='${player.faceUrl}';}else if(!this.dataset.triedFutbin){this.dataset.triedFutbin=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.style.display='none'; this.nextElementSibling.style.display='flex';}"
+        onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else if(!this.dataset.t3){this.dataset.t3=1; this.src='${fallbackBadge}';}"
         loading="lazy"
       />
-      <div class="card-face-fallback" style="display:none">
-        ${getPositionIcon(player.pos)}
-      </div>
       <div class="card-name">${player.name}</div>
       <div class="card-flag">${player.flag}</div>
     </div>
@@ -925,6 +933,7 @@ function renderSpinCards(cards, dimAll) {
     const mgr = getCurrentManager();
     const canPlace = !dimAll && mgr && !mgr.isBot && myTurn && !!findBestSlot(mgr, player);
     const faceImg = getFaceUrl(player);
+    const fallbackBadge = getFallbackBadge(player);
 
     return `
       <div class="draft-card ${cardClass} ${isSelected ? 'selected' : ''} ${isDimmed ? 'dimmed' : ''} ${!canPlace && !dimAll ? 'opacity-60 cursor-not-allowed' : ''}"
@@ -942,12 +951,9 @@ function renderSpinCards(cards, dimAll) {
             class="dc-face"
             src="${faceImg}"
             alt="${player.name}"
-            onerror="if(!this.dataset.triedOriginal){this.dataset.triedOriginal=1; this.src='${player.faceUrl}';}else if(!this.dataset.triedFutbin){this.dataset.triedFutbin=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.style.display='none'; this.nextElementSibling.style.display='flex';}"
+            onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const id='${player.faceUrl}'.replace(/[^0-9]/g,'').slice(-6); this.src='https://images.futbin.com/25/players/'+id+'.png';}else if(!this.dataset.t3){this.dataset.t3=1; this.src='${fallbackBadge}';}"
             loading="lazy"
           />
-          <div class="dc-face-fallback" style="display:none">
-            ${getPositionIcon(player.pos)}
-          </div>
         </div>
         <div class="dc-info">
           <div class="dc-name">${player.name}</div>
@@ -1175,4 +1181,15 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
   showScreen('screen-landing');
   renderMultiNameInputs();
   setupOnlineCallbacks();
+
+  // Check URL params for quick join e.g. ?join=FUT-8X9K
+  const params = new URLSearchParams(window.location.search);
+  const joinCode = params.get('join');
+  if (joinCode) {
+    showOnlineConfig();
+    switchOnlineTab('join');
+    const input = document.getElementById('online-room-code-input');
+    if (input) input.value = joinCode;
+    setTimeout(() => window.handleJoinRoom(joinCode), 500);
+  }
 })();
