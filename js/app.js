@@ -38,6 +38,19 @@ let state = {
   onlineTab: 'host',   // 'host' | 'join'
 };
 
+function getFallbackSvg(name = 'Player', pos = 'ATT') {
+  const clean = (name || 'Player').replace(/[^a-zA-Z\s]/g, '').trim();
+  const parts = clean.split(' ').filter(Boolean);
+  const initials = (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : clean.slice(0, 2)).toUpperCase() || 'FC';
+  const color = pos === 'GK' ? '#f59e0b' : pos === 'DEF' ? '#3b82f6' : pos === 'MID' ? '#10b981' : '#ef4444';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+    <rect width="120" height="120" rx="60" fill="${color}" opacity="0.25"/>
+    <circle cx="60" cy="60" r="52" fill="${color}" opacity="0.35" stroke="${color}" stroke-width="2"/>
+    <text x="60" y="69" font-family="sans-serif" font-size="38" font-weight="bold" fill="#ffffff" text-anchor="middle">${initials}</text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 // Helper: Multi-tier high-availability CDN proxy for player face photos
 function getFaceUrl(player) {
   if (!player || !player.faceUrl) return '';
@@ -45,11 +58,29 @@ function getFaceUrl(player) {
   return `https://wsrv.nl/?url=${encodeURIComponent(clean)}&w=150&output=webp`;
 }
 
-function getFallbackBadge(player) {
-  const cleanName = encodeURIComponent(player.name.replace(/[^a-zA-Z\s]/g, ''));
-  const bg = player.pos === 'GK' ? 'D97706' : player.pos === 'DEF' ? '2563EB' : player.pos === 'MID' ? '059669' : 'DC2626';
-  return `https://ui-avatars.com/api/?name=${cleanName}&background=${bg}&color=ffffff&bold=true&size=120&font-size=0.4`;
-}
+window.handleImageError = function(img, originalUrl, name, pos) {
+  if (!img) return;
+  const step = parseInt(img.dataset.step || '0', 10);
+  img.dataset.step = (step + 1).toString();
+
+  const m = originalUrl ? originalUrl.match(/players\/(\d+)\/(\d+)/) : null;
+  const p1 = m ? m[1] : '';
+  const p2 = m ? m[2] : '';
+  const fullId = m ? (m[1] + m[2]) : '';
+
+  if (step === 0) {
+    img.src = originalUrl || getFallbackSvg(name, pos);
+  } else if (step === 1 && p1 && p2) {
+    img.src = `https://images.weserv.nl/?url=cdn.sofifa.net/players/${p1}/${p2}/25_120.png`;
+  } else if (step === 2 && fullId) {
+    img.src = `https://images.futbin.com/25/players/${fullId}.png`;
+  } else if (step === 3 && fullId) {
+    img.src = `https://images.futbin.com/24/players/${fullId}.png`;
+  } else {
+    img.onerror = null;
+    img.src = getFallbackSvg(name, pos);
+  }
+};
 
 // ═══════════════════════════════════════════════════════
 //  SCREEN MANAGEMENT
@@ -900,7 +931,7 @@ function getPositionIcon(pos) {
 function buildMiniCard(player) {
   const cardClass = `card-${player.cardType}`;
   const faceImg = getFaceUrl(player);
-  const fallbackBadge = getFallbackBadge(player);
+  const safeName = player.name.replace(/'/g, "\\'");
 
   return `
     <div class="fut-mini-card ${cardClass}">
@@ -912,7 +943,7 @@ function buildMiniCard(player) {
         class="card-face"
         src="${faceImg}"
         alt="${player.name}"
-        onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const m='${player.faceUrl}'.match(/players\/(\d+)\/(\d+)/); const id=m?(m[1]+m[2]):'0'; this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.src='${fallbackBadge}';}"
+        onerror="window.handleImageError(this, '${player.faceUrl}', '${safeName}', '${player.pos}')"
         loading="lazy"
       />
       <div class="card-name">${player.name}</div>
@@ -937,7 +968,7 @@ function renderSpinCards(cards, dimAll) {
     const mgr = getCurrentManager();
     const canPlace = !dimAll && mgr && !mgr.isBot && myTurn && !!findBestSlot(mgr, player);
     const faceImg = getFaceUrl(player);
-    const fallbackBadge = getFallbackBadge(player);
+    const safeName = player.name.replace(/'/g, "\\'");
 
     return `
       <div class="draft-card ${cardClass} ${isSelected ? 'selected' : ''} ${isDimmed ? 'dimmed' : ''} ${!canPlace && !dimAll ? 'opacity-60 cursor-not-allowed' : ''}"
@@ -955,7 +986,7 @@ function renderSpinCards(cards, dimAll) {
             class="dc-face"
             src="${faceImg}"
             alt="${player.name}"
-            onerror="if(!this.dataset.t1){this.dataset.t1=1; this.src='${player.faceUrl}';}else if(!this.dataset.t2){this.dataset.t2=1; const m='${player.faceUrl}'.match(/players\/(\d+)\/(\d+)/); const id=m?(m[1]+m[2]):'0'; this.src='https://images.futbin.com/25/players/'+id+'.png';}else{this.src='${fallbackBadge}';}"
+            onerror="window.handleImageError(this, '${player.faceUrl}', '${safeName}', '${player.pos}')"
             loading="lazy"
           />
         </div>
