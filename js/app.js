@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════
 //  app.js — Main Application Controller
-//  UI Rendering, Event Handlers, Game Loop
+//  UI Rendering, Event Handlers, Game Loop, Online P2P
 // ═══════════════════════════════════════════════════════
 
 import { buildPlayerPool } from './database.js';
@@ -15,12 +15,13 @@ import {
   runTournament, launchVictoryCelebration,
   renderLeaderboardRow, renderMatchRow
 } from './tournament.js';
+import { onlineEngine } from './onlineEngine.js';
 
 // ═══════════════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════════════
 let state = {
-  mode: null,          // 'solo' | 'multi'
+  mode: null,          // 'solo' | 'multi' | 'online'
   managers: [],        // array of manager objects
   playerPool: [],      // remaining undrafted players
   drawnCards: [],      // current 4 cards on table
@@ -30,9 +31,11 @@ let state = {
   viewingManagerId: 0, // which manager's pitch we're showing
   isProcessing: false, // guard against double-clicks
   botPending: false,   // bot turn is in progress
-  // Config from setup modal:
+  // Config:
   soloBots: 1,
   multiPlayers: 2,
+  onlineMaxPlayers: 2,
+  onlineTab: 'host',   // 'host' | 'join'
 };
 
 // ═══════════════════════════════════════════════════════
@@ -81,7 +84,7 @@ window.startSoloGame = function() {
 };
 
 // ═══════════════════════════════════════════════════════
-//  MULTI CONFIG
+//  LOCAL MULTI CONFIG (Pass & Play)
 // ═══════════════════════════════════════════════════════
 window.showMultiConfig = function() {
   state.multiPlayers = 2;
@@ -127,6 +130,284 @@ window.startMultiGame = function() {
 };
 
 // ═══════════════════════════════════════════════════════
+//  ONLINE MULTIPLAYER CONFIG (Host & Join WebRTC P2P)
+// ═══════════════════════════════════════════════════════
+window.showOnlineConfig = function() {
+  openModal('modal-online');
+  switchOnlineTab('host');
+};
+
+window.closeOnlineModal = function() {
+  closeModal('modal-online');
+};
+
+window.switchOnlineTab = function(tab) {
+  state.onlineTab = tab;
+  const hostBtn = document.getElementById('tab-btn-host');
+  const joinBtn = document.getElementById('tab-btn-join');
+  const hostContent = document.getElementById('online-host-content');
+  const joinContent = document.getElementById('online-join-content');
+
+  if (tab === 'host') {
+    hostBtn.className = 'flex-1 py-2.5 rounded-lg font-teko text-2xl font-bold transition-all text-white bg-gradient-to-r from-cyan-600 to-blue-600 shadow-glow-cyan-sm';
+    joinBtn.className = 'flex-1 py-2.5 rounded-lg font-teko text-2xl font-bold transition-all text-gray-400 hover:text-white';
+    hostContent.classList.remove('hidden');
+    joinContent.classList.add('hidden');
+  } else {
+    joinBtn.className = 'flex-1 py-2.5 rounded-lg font-teko text-2xl font-bold transition-all text-white bg-gradient-to-r from-purple-600 to-indigo-600 shadow-glow-purple-sm';
+    hostBtn.className = 'flex-1 py-2.5 rounded-lg font-teko text-2xl font-bold transition-all text-gray-400 hover:text-white';
+    joinContent.classList.remove('hidden');
+    hostContent.classList.add('hidden');
+  }
+};
+
+window.selectOnlineMaxPlayers = function(n) {
+  state.onlineMaxPlayers = n;
+  document.querySelectorAll('.online-p-btn').forEach(btn => {
+    btn.classList.toggle('active-online-btn', parseInt(btn.dataset.p) === n);
+  });
+};
+
+// ── HOST CREATES ROOM ─────────────────────────────────
+window.handleCreateRoom = async function() {
+  const nameInput = document.getElementById('online-host-name');
+  const hostName = (nameInput.value.trim() || 'Host Manager').substring(0, 20);
+  const btnCreate = document.getElementById('btn-create-room');
+
+  btnCreate.disabled = true;
+  btnCreate.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>Generating Room...`;
+
+  try {
+    const code = await onlineEngine.createRoom(hostName, state.onlineMaxPlayers);
+    document.getElementById('display-room-code').textContent = code;
+    document.getElementById('host-lobby-area').classList.remove('hidden');
+    document.getElementById('btn-start-online-game').classList.remove('hidden');
+    btnCreate.classList.add('hidden');
+
+    renderLobbyPlayerList(onlineEngine.joinedPlayers);
+    showToast(`🌐 Room ${code} created! Waiting for players to join...`, 'success');
+  } catch (err) {
+    showToast(`Failed to create room: ${err.message || 'Network error'}`, 'error');
+    btnCreate.disabled = false;
+    btnCreate.innerHTML = `<i class="fa-solid fa-plus-circle mr-2"></i>Create Room`;
+  }
+};
+
+// ── COPY ROOM CODE ─────────────────────────────────────
+window.copyRoomCode = function() {
+  const code = document.getElementById('display-room-code').textContent;
+  if (!code || code === 'FUT-XXXX') return;
+
+  navigator.clipboard.writeText(code).then(() => {
+    const icon = document.getElementById('copy-icon');
+    if (icon) {
+      icon.className = 'fa-solid fa-check text-green-400 text-lg';
+      setTimeout(() => { icon.className = 'fa-solid fa-copy text-lg'; }, 2000);
+    }
+    showToast(`📋 Room Code ${code} copied to clipboard!`, 'info');
+  }).catch(() => {
+    showToast(`Room Code: ${code}`, 'info');
+  });
+};
+
+// ── JOIN ROOM ──────────────────────────────────────────
+window.handleJoinRoom = async function() {
+  const nameInput = document.getElementById('online-join-name');
+  const codeInput = document.getElementById('online-room-code-input');
+  const playerName = (nameInput.value.trim() || 'Player 2').substring(0, 20);
+  const roomCode = codeInput.value.trim().toUpperCase();
+
+  if (!roomCode || roomCode.length < 5) {
+    showToast('Please enter a valid Room Code (e.g. FUT-8X9K)', 'warn');
+    return;
+  }
+
+  const btnJoin = document.getElementById('btn-join-room');
+  const statusBox = document.getElementById('join-status-box');
+
+  btnJoin.disabled = true;
+  statusBox.classList.remove('hidden');
+
+  try {
+    await onlineEngine.joinRoom(playerName, roomCode);
+    showToast(`Connected to Room ${roomCode}! Waiting for Host to start...`, 'success');
+  } catch (err) {
+    showToast(`Could not connect to Room ${roomCode}. Check code or host status.`, 'error');
+    btnJoin.disabled = false;
+    statusBox.classList.add('hidden');
+  }
+};
+
+// ── RENDER LOBBY LIST (HOST) ───────────────────────────
+function renderLobbyPlayerList(players) {
+  const listEl = document.getElementById('lobby-player-list');
+  const countEl = document.getElementById('lobby-player-count');
+  if (!listEl) return;
+
+  if (countEl) countEl.textContent = `${players.length} / ${state.onlineMaxPlayers}`;
+
+  listEl.innerHTML = players.map((p, idx) => {
+    const color = MANAGER_COLORS[idx] || MANAGER_COLORS[0];
+    return `
+      <div class="flex items-center justify-between p-2.5 rounded-xl bg-white/5 border border-white/10 text-sm">
+        <div class="flex items-center gap-2.5">
+          <span class="w-3 h-3 rounded-full" style="background:${color.hex}"></span>
+          <span class="font-semibold text-white">${p.name}</span>
+          ${p.isHost ? '<span class="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-1.5 py-0.5 rounded uppercase font-extrabold">HOST</span>' : ''}
+        </div>
+        <span class="flex items-center gap-1.5 text-xs text-emerald-400">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Connected
+        </span>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── HOST STARTS ONLINE GAME ───────────────────────────
+window.handleStartOnlineGame = function() {
+  if (!onlineEngine.isHost) return;
+  if (onlineEngine.joinedPlayers.length < 2) {
+    showToast('At least 2 players are required to start!', 'warn');
+    return;
+  }
+
+  const pool = buildPlayerPool();
+  const managers = onlineEngine.joinedPlayers.map((p, idx) => {
+    return createManager(idx, p.name, false);
+  });
+
+  const initialState = {
+    managers,
+    playerPool: pool,
+    currentTurnIndex: 0,
+    roomCode: onlineEngine.roomCode,
+  };
+
+  onlineEngine.startOnlineGame(initialState);
+};
+
+// ── SETUP ONLINE ENGINE CALLBACKS ──────────────────────
+function setupOnlineCallbacks() {
+  onlineEngine.onLobbyUpdate = (players) => {
+    renderLobbyPlayerList(players);
+  };
+
+  onlineEngine.onGameStart = (payload) => {
+    closeModal('modal-online');
+    const { state: initData } = payload;
+
+    state.mode = 'online';
+    state.managers = initData.managers;
+    state.playerPool = initData.playerPool;
+    state.drawnCards = [];
+    state.currentTurnIndex = initData.currentTurnIndex;
+    state.hasSpun = false;
+    state.selectedCard = null;
+    state.viewingManagerId = state.managers[0].id;
+    state.isProcessing = false;
+    state.botPending = false;
+
+    // Show header online badge
+    const badge = document.getElementById('online-room-badge');
+    const codeEl = document.getElementById('header-room-code');
+    if (badge) badge.classList.remove('hidden');
+    if (codeEl) codeEl.textContent = onlineEngine.roomCode || 'ONLINE P2P';
+
+    showScreen('screen-game');
+    renderManagerTabs();
+    renderPitch();
+    updatePoolCount();
+    clearDraftLog();
+    addDraftLog('system', `🌐 Online P2P Draft Room ${onlineEngine.roomCode} Started!`);
+    updateSpinSkipButtons();
+
+    beginTurn();
+  };
+
+  onlineEngine.onActionReceived = (action) => {
+    handleRemoteAction(action);
+  };
+
+  onlineEngine.onPlayerDisconnect = (msg) => {
+    showToast(`⚠️ ${msg}`, 'error');
+    addDraftLog('system', `⚠️ Connection alert: ${msg}`);
+  };
+}
+
+// ── HANDLE REMOTE ACTIONS OVER P2P ─────────────────────
+function handleRemoteAction(action) {
+  const { type, playerIndex, slotKey, player, managerId } = action;
+
+  if (type === 'SPIN') {
+    state.hasSpun = true;
+    state.drawnCards = action.drawnCards;
+    state.playerPool = action.remainingPool;
+    playSpin();
+    renderSpinCards(state.drawnCards, !isMyTurn());
+    updatePoolCount();
+    updateSpinSkipButtons();
+    addDraftLog('online', `🎲 ${state.managers[state.currentTurnIndex]?.name} spun 4 cards.`);
+  } else if (type === 'PICK') {
+    const mgr = state.managers.find(m => m.id === managerId);
+    if (mgr && player) {
+      playPick();
+      fillSlot(mgr, slotKey, player);
+      removeFromPool(player.id);
+      state.drawnCards = [];
+      state.hasSpun = false;
+      state.selectedCard = null;
+
+      addDraftLog('pick', `⚽ ${mgr.name} drafted <strong>${player.name}</strong> (${player.ovr} OVR) → [${slotKey}]`);
+      renderPitch();
+      renderManagerTabs();
+      updatePoolCount();
+      updateSpinSkipButtons();
+
+      if (mgr.done) {
+        playWhistle();
+        showToast(`🎉 ${mgr.name}'s squad is complete!`, 'success');
+        addDraftLog('system', `✅ ${mgr.name} completed their 11-player squad!`);
+      }
+
+      advanceTurnRemote();
+    }
+  } else if (type === 'SKIP') {
+    const mgr = state.managers.find(m => m.id === managerId);
+    playSkip();
+    state.drawnCards = [];
+    state.hasSpun = false;
+    state.selectedCard = null;
+    addDraftLog('skip', `⏩ ${mgr?.name || 'Player'} skipped this round.`);
+    updateSpinSkipButtons();
+    advanceTurnRemote();
+  }
+}
+
+function advanceTurnRemote() {
+  const allDone = state.managers.every(m => m.done);
+  if (allDone) {
+    setTimeout(() => triggerTournament(), 800);
+    return;
+  }
+
+  let next = (state.currentTurnIndex + 1) % state.managers.length;
+  let tries = 0;
+  while (state.managers[next].done && tries < state.managers.length) {
+    next = (next + 1) % state.managers.length;
+    tries++;
+  }
+
+  state.currentTurnIndex = next;
+  beginTurn();
+}
+
+function isMyTurn() {
+  if (state.mode !== 'online') return true;
+  const currentMgr = getCurrentManager();
+  return currentMgr?.id === onlineEngine.myId;
+}
+
+// ═══════════════════════════════════════════════════════
 //  GAME START
 // ═══════════════════════════════════════════════════════
 function startGame(mode, managers) {
@@ -140,6 +421,9 @@ function startGame(mode, managers) {
   state.viewingManagerId = managers[0].id;
   state.isProcessing = false;
   state.botPending = false;
+
+  const badge = document.getElementById('online-room-badge');
+  if (badge) badge.classList.add('hidden');
 
   showScreen('screen-game');
   renderManagerTabs();
@@ -176,11 +460,13 @@ function beginTurn() {
 
   // Clear spin area
   const area = document.getElementById('spin-cards-area');
+  const myTurn = isMyTurn();
+
   area.innerHTML = `
     <div class="col-span-2 sm:col-span-4 flex items-center justify-center h-full">
       <div class="text-center text-gray-600">
         <i class="fa-solid fa-layer-group text-5xl mb-3 opacity-50"></i>
-        <p class="text-sm">Press <strong class="text-white">Spin</strong> to draw 4 cards</p>
+        <p class="text-sm">${myTurn ? 'Press <strong class="text-white">Spin</strong> to draw 4 cards' : `Waiting for <strong class="text-cyan-400">${mgr.name}</strong> to spin...`}</p>
       </div>
     </div>`;
 
@@ -247,10 +533,8 @@ async function handleBotTurn(mgr) {
   updateSpinSkipButtons();
   showBotLog(true, mgr);
 
-  // Bot "thinks" before spinning
   await delay(botThinkDelay());
 
-  // Bot spins
   playCardDeal();
   const drawn = drawCards(4);
   if (drawn.length === 0) {
@@ -260,9 +544,8 @@ async function handleBotTurn(mgr) {
     return;
   }
   state.drawnCards = drawn;
-  renderSpinCards(drawn, true); // dimmed, no interaction
+  renderSpinCards(drawn, true);
 
-  // Bot evaluates
   await delay(botThinkDelay(true));
 
   const decision = botDecide(mgr, drawn);
@@ -275,7 +558,6 @@ async function handleBotTurn(mgr) {
     playPick();
     addDraftLog('bot', `🤖 ${mgr.name} drafted ${player.name} (${player.ovr} OVR) → [${decision.slotKey}]`);
 
-    // Highlight selected card briefly
     highlightBotPick(decision.playerIndex);
     await delay(800);
 
@@ -299,17 +581,21 @@ async function handleBotTurn(mgr) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  SPIN HANDLER (Human Turn)
+//  SPIN HANDLER (Human & Online Turn)
 // ═══════════════════════════════════════════════════════
 window.handleSpin = function() {
   if (state.hasSpun || state.isProcessing || state.botPending) return;
   const mgr = getCurrentManager();
   if (!mgr || mgr.done) return;
 
+  if (state.mode === 'online' && !isMyTurn()) {
+    showToast(`It's ${mgr.name}'s turn online!`, 'warn');
+    return;
+  }
+
   playSpin();
   state.hasSpun = true;
   state.selectedCard = null;
-  updateSpinSkipButtons();
 
   const drawn = drawCards(4);
   if (drawn.length === 0) {
@@ -320,6 +606,16 @@ window.handleSpin = function() {
   state.drawnCards = drawn;
   renderSpinCards(drawn, false);
   updatePoolCount();
+  updateSpinSkipButtons();
+
+  if (state.mode === 'online') {
+    onlineEngine.sendAction({
+      type: 'SPIN',
+      managerId: mgr.id,
+      drawnCards: drawn,
+      remainingPool: state.playerPool,
+    });
+  }
 };
 
 // ═══════════════════════════════════════════════════════
@@ -330,6 +626,11 @@ window.selectCard = function(idx) {
   const mgr = getCurrentManager();
   if (!mgr || mgr.isBot) return;
 
+  if (state.mode === 'online' && !isMyTurn()) {
+    showToast(`It's ${mgr.name}'s turn online!`, 'warn');
+    return;
+  }
+
   const player = state.drawnCards[idx];
   if (!player) return;
 
@@ -339,9 +640,7 @@ window.selectCard = function(idx) {
     return;
   }
 
-  // Confirm selection visually
   if (state.selectedCard === idx) {
-    // Double-click or already selected → confirm pick
     confirmPick(idx, slotKey, player, mgr);
   } else {
     state.selectedCard = idx;
@@ -365,6 +664,15 @@ function confirmPick(idx, slotKey, player, mgr) {
   updatePoolCount();
   updateSpinSkipButtons();
 
+  if (state.mode === 'online') {
+    onlineEngine.sendAction({
+      type: 'PICK',
+      managerId: mgr.id,
+      slotKey,
+      player,
+    });
+  }
+
   if (mgr.done) {
     playWhistle();
     showToast(`🎉 ${mgr.name}'s squad is complete!`, 'success');
@@ -383,6 +691,11 @@ window.handleSkip = function() {
   const mgr = getCurrentManager();
   if (!mgr || mgr.isBot) return;
 
+  if (state.mode === 'online' && !isMyTurn()) {
+    showToast(`It's ${mgr.name}'s turn online!`, 'warn');
+    return;
+  }
+
   playSkip();
   state.drawnCards = [];
   state.hasSpun = false;
@@ -390,6 +703,14 @@ window.handleSkip = function() {
 
   addDraftLog('skip', `⏩ ${mgr.name} skipped this round.`);
   updateSpinSkipButtons();
+
+  if (state.mode === 'online') {
+    onlineEngine.sendAction({
+      type: 'SKIP',
+      managerId: mgr.id,
+    });
+  }
+
   advanceTurn();
 };
 
@@ -422,11 +743,13 @@ function updateTurnIndicator() {
   const mgr = getCurrentManager();
   if (!mgr) return;
 
+  const myTurn = isMyTurn();
+
   el.innerHTML = `
     <span class="w-2 h-2 rounded-full inline-block mr-1" style="background:${mgr.color.hex}"></span>
     ${mgr.isBot ? '<i class="fa-solid fa-robot mr-1 opacity-70"></i>' : ''}
     <span style="color:${mgr.color.hex}">${mgr.name}</span>&nbsp;
-    <span class="text-gray-400">'s Turn</span>
+    <span class="text-gray-400">${state.mode === 'online' ? (myTurn ? '(Your Turn!)' : '(Waiting online...)') : "'s Turn"}</span>
   `;
   el.style.setProperty('--pulse-color', `${mgr.color.hex}66`);
   el.classList.add('pulsing');
@@ -444,12 +767,16 @@ function updateSpinSkipButtons() {
   const mgr = getCurrentManager();
   const isBot = mgr?.isBot || state.botPending;
   const isBusy = state.isProcessing || state.botPending;
+  const myTurn = isMyTurn();
 
-  btnSpin.disabled = state.hasSpun || isBusy || !mgr || mgr.done;
-  btnSkip.disabled = !state.hasSpun || isBusy || !mgr || mgr.done;
+  btnSpin.disabled = state.hasSpun || isBusy || !mgr || mgr.done || !myTurn;
+  btnSkip.disabled = !state.hasSpun || isBusy || !mgr || mgr.done || !myTurn;
 
   if (isBot) {
     btnSpin.innerHTML = `<div class="bot-thinking"><i class="fa-solid fa-robot bot-thinking-icon"></i><span>Bot Thinking</span><div class="spin-dots"><span></span><span></span><span></span></div></div>`;
+    btnSkip.disabled = true;
+  } else if (state.mode === 'online' && !myTurn) {
+    btnSpin.innerHTML = `<div class="flex items-center justify-center gap-2 text-cyan-300 font-teko text-xl"><i class="fa-solid fa-hourglass fa-spin"></i> Waiting for ${mgr?.name || 'Player'}...</div>`;
     btnSkip.disabled = true;
   } else {
     btnSpin.innerHTML = `<i class="fa-solid fa-rotate-right"></i> <span class="font-teko text-xl">Putar / Spin</span>`;
@@ -497,7 +824,6 @@ function renderPitch() {
   const mgr = state.managers.find(m => m.id === state.viewingManagerId);
   if (!mgr) return;
 
-  // Update header info
   const nameEl = document.getElementById('pitch-manager-name');
   const ovrEl = document.getElementById('pitch-ovr');
   const chemEl = document.getElementById('pitch-chem');
@@ -514,18 +840,15 @@ function renderPitch() {
     chemEl.style.color = chem > 0 ? chemColor(chem) : '#6b7280';
   }
 
-  // Render pitch slots
   const pitchEl = document.getElementById('pitch-slots');
   if (!pitchEl) return;
 
-  // Add pitch markings
   pitchEl.innerHTML = `
     <div class="pitch-marking-center"></div>
     <div class="pitch-marking-penalty top"></div>
     <div class="pitch-marking-penalty bottom"></div>
   `;
 
-  // Add each slot
   FORMATION_SLOTS.forEach(slot => {
     const player = mgr.slots[slot.key];
     const slotDiv = document.createElement('div');
@@ -560,7 +883,6 @@ function getPositionIcon(pos) {
   }
 }
 
-// ── Build mini FUT card HTML ───────────────────────────
 function buildMiniCard(player) {
   const cardClass = `card-${player.cardType}`;
   return `
@@ -592,16 +914,18 @@ function renderSpinCards(cards, dimAll) {
   const area = document.getElementById('spin-cards-area');
   if (!area) return;
 
+  const myTurn = isMyTurn();
+
   area.innerHTML = cards.map((player, idx) => {
     const cardClass = `card-${player.cardType}`;
     const isSelected = state.selectedCard === idx;
     const isDimmed = dimAll || (state.selectedCard !== null && !isSelected);
     const mgr = getCurrentManager();
-    const canPlace = !dimAll && mgr && !mgr.isBot && !!findBestSlot(mgr, player);
+    const canPlace = !dimAll && mgr && !mgr.isBot && myTurn && !!findBestSlot(mgr, player);
 
     return `
       <div class="draft-card ${cardClass} ${isSelected ? 'selected' : ''} ${isDimmed ? 'dimmed' : ''} ${!canPlace && !dimAll ? 'opacity-60 cursor-not-allowed' : ''}"
-        onclick="${!dimAll ? `selectCard(${idx})` : ''}"
+        onclick="${!dimAll && myTurn ? `selectCard(${idx})` : ''}"
         style="animation-delay:${idx * 0.07}s"
         title="${player.name} — ${player.club} (${player.nat})"
       >
@@ -630,7 +954,7 @@ function renderSpinCards(cards, dimAll) {
             <span class="dc-nat">${player.nat}</span>
           </div>
         </div>
-        ${!dimAll ? `<div class="dc-pick-btn">✔ Pick!</div>` : ''}
+        ${!dimAll && myTurn ? `<div class="dc-pick-btn">✔ Pick!</div>` : ''}
       </div>
     `;
   }).join('');
@@ -685,13 +1009,13 @@ function addDraftLog(type, message) {
     skip: '<i class="log-icon fa-solid fa-forward text-gray-500"></i>',
     bot:  '<i class="log-icon fa-solid fa-robot text-purple-400"></i>',
     system: '<i class="log-icon fa-solid fa-circle-info text-yellow-400"></i>',
+    online: '<i class="log-icon fa-solid fa-globe text-cyan-400"></i>',
   };
 
   const div = document.createElement('div');
   div.className = `log-entry log-${type}`;
   div.innerHTML = `${icons[type] || ''}<span>${message}</span>`;
 
-  // Remove placeholder
   const placeholder = container.querySelector('p');
   if (placeholder) placeholder.remove();
 
@@ -725,7 +1049,6 @@ function triggerTournament() {
 }
 
 function renderTournamentScreen(standings, matches) {
-  // Champion banner
   const champion = standings[0];
   const champName = document.getElementById('champion-name');
   const champSub = document.getElementById('champion-sub');
@@ -744,19 +1067,16 @@ function renderTournamentScreen(standings, matches) {
     champBanner.style.borderColor = `${champion.color.hex}60`;
   }
 
-  // Leaderboard
   const tbody = document.getElementById('leaderboard-body');
   if (tbody) {
     tbody.innerHTML = standings.map((entry, i) => renderLeaderboardRow(entry, i + 1)).join('');
   }
 
-  // Match results
   const matchLog = document.getElementById('match-results-log');
   if (matchLog) {
     matchLog.innerHTML = matches.map(m => renderMatchRow(m, state.managers)).join('');
   }
 
-  // Squad showcase
   const showcase = document.getElementById('squad-showcase');
   if (showcase) {
     showcase.innerHTML = standings.map(entry => renderSquadShowcase(entry)).join('');
@@ -805,12 +1125,12 @@ window.confirmQuit = function() { openModal('modal-quit'); };
 
 window.resetToLanding = function() {
   closeModal('modal-quit');
-  // Reset state
+  onlineEngine.disconnect();
   state = {
     mode: null, managers: [], playerPool: [], drawnCards: [],
     currentTurnIndex: 0, hasSpun: false, selectedCard: null,
     viewingManagerId: 0, isProcessing: false, botPending: false,
-    soloBots: 1, multiPlayers: 2,
+    soloBots: 1, multiPlayers: 2, onlineMaxPlayers: 2, onlineTab: 'host',
   };
   showScreen('screen-landing');
 };
@@ -850,5 +1170,6 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 // ═══════════════════════════════════════════════════════
 (function init() {
   showScreen('screen-landing');
-  renderMultiNameInputs(); // pre-render with 2 players
+  renderMultiNameInputs();
+  setupOnlineCallbacks();
 })();
