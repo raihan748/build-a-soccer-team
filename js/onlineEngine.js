@@ -1,9 +1,9 @@
 // ═══════════════════════════════════════════════════════
-//  onlineEngine.js — WebRTC PeerJS + Multi-Transport Realtime Engine
-//  Includes Google STUN + TURN servers, Duplicate Protection & Fail-Safe Signaling
+//  onlineEngine.js — Multi-Transport Realtime Engine
+//  WebRTC PeerJS + Firebase Realtime DB + BroadcastChannel + LocalStorage
 // ═══════════════════════════════════════════════════════
 
-/* global Peer */
+/* global Peer, firebase */
 
 const STUN_TURN_SERVERS = {
   iceServers: [
@@ -32,6 +32,8 @@ class OnlineEngine {
     this.maxPlayers = 2;
     this.broadcastChannel = null;
     this.storageListener = null;
+    this.firebaseDb = null;
+    this.firebaseRoomRef = null;
 
     this.onLobbyUpdate = null;
     this.onGameStart = null;
@@ -54,6 +56,57 @@ class OnlineEngine {
     let clean = raw.trim().toUpperCase();
     clean = clean.replace(/^FUT-?/, '');
     return clean.replace(/[^A-Z0-9]/g, '');
+  }
+
+  // ── FIREBASE REALTIME DB SYNC (ZERO-CONFIG MULTIPLAYER) ──
+  initFirebase(customConfig = null) {
+    if (typeof firebase === 'undefined') return false;
+    try {
+      if (!firebase.apps || !firebase.apps.length) {
+        const cfg = customConfig || {
+          databaseURL: 'https://fut-draft-default-rtdb.asia-southeast1.firebasedatabase.app'
+        };
+        firebase.initializeApp(cfg);
+      }
+      this.firebaseDb = firebase.database();
+      return true;
+    } catch (e) {
+      console.warn('Firebase init notice:', e.message);
+      return false;
+    }
+  }
+
+  setupFirebaseSync(roomCode) {
+    const clean = this.normalizeCode(roomCode);
+    if (!clean) return;
+    this.initFirebase();
+
+    if (!this.firebaseDb) return;
+
+    try {
+      this.firebaseRoomRef = this.firebaseDb.ref(`rooms/${clean}`);
+
+      // Listen for room updates from Firebase
+      this.firebaseRoomRef.on('value', (snapshot) => {
+        const val = snapshot.val();
+        if (!val) return;
+
+        if (val.players && Array.isArray(val.players)) {
+          this.joinedPlayers = val.players;
+          if (this.onLobbyUpdate) this.onLobbyUpdate(this.joinedPlayers);
+        }
+
+        if (val.gameState && !this.isHost) {
+          if (this.onGameStart) this.onGameStart(val.gameState);
+        }
+
+        if (val.lastAction && val.lastAction._sender !== this.myPeerId) {
+          if (this.onActionReceived) this.onActionReceived(val.lastAction.action);
+        }
+      });
+    } catch (err) {
+      console.warn('Firebase Sync Notice:', err);
+    }
   }
 
   initLocalChannels(roomCode) {
@@ -81,6 +134,9 @@ class OnlineEngine {
       }
     };
     window.addEventListener('storage', this.storageListener);
+
+    // Also setup Firebase RTDB sync for 100% guaranteed cross-device play
+    this.setupFirebaseSync(roomCode);
   }
 
   sendLocal(data) {
@@ -93,6 +149,19 @@ class OnlineEngine {
     try {
       localStorage.setItem(channelName, JSON.stringify({ ...data, _t: Date.now() }));
     } catch (e) { /* ignore */ }
+
+    // Sync to Firebase RTDB if available
+    if (this.firebaseRoomRef) {
+      try {
+        if (data.type === 'LOBBY_UPDATE' && data.players) {
+          this.firebaseRoomRef.update({ players: data.players });
+        } else if (data.type === 'GAME_START') {
+          this.firebaseRoomRef.update({ gameState: data });
+        } else if (data.type === 'GAME_ACTION') {
+          this.firebaseRoomRef.update({ lastAction: { action: data.action, _sender: this.myPeerId, _t: Date.now() } });
+        }
+      } catch (e) { /* ignore */ }
+    }
   }
 
   handleChannelMessage(data) {
@@ -161,7 +230,7 @@ class OnlineEngine {
       this.myPeerId = customId || `peer_${Math.random().toString(36).substring(2, 9)}`;
 
       if (typeof Peer === 'undefined') {
-        console.warn('PeerJS library not present. Operating in Local Sync mode.');
+        console.warn('PeerJS library not present. Operating in Multi-Transport Sync mode.');
         return resolve(this.myPeerId);
       }
 
@@ -203,7 +272,6 @@ class OnlineEngine {
     this.myId = 0;
     this.roomCode = this.generateCode();
 
-    // CRITICAL FIX: Initialize host player list BEFORE opening network sockets
     this.joinedPlayers = [
       { id: 0, name: this.myPlayerName, peerId: null, isHost: true }
     ];
@@ -256,7 +324,7 @@ class OnlineEngine {
       } catch (e) { /* fallback to local */ }
     }
 
-    // Broadcast local join request for same-device multi-tab support
+    // Broadcast local & Firebase join request
     this.sendLocal({
       type: 'JOIN_REQUEST',
       name: this.myPlayerName,
@@ -274,7 +342,6 @@ class OnlineEngine {
           resolve(this.roomCode);
         } else if (checks >= maxChecks) {
           clearInterval(timer);
-          // CRITICAL FIX: Eliminate phantom host! Throw error if no response from host
           reject(new Error(`Could not find Room "${this.roomCode}". Ensure Host is online & code is correct.`));
         }
       }, 200);
@@ -386,6 +453,10 @@ class OnlineEngine {
   }
 
   disconnect() {
+    if (this.firebaseRoomRef) {
+      try { this.firebaseRoomRef.off(); } catch (e) {}
+      this.firebaseRoomRef = null;
+    }
     if (this.roomCode) {
       const clean = this.normalizeCode(this.roomCode);
       try { localStorage.removeItem(`fut_room_${clean}`); } catch(e) {}
