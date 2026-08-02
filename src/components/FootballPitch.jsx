@@ -85,10 +85,11 @@ export default function FootballPitch({ manager, onResellPlayer }) {
                     <img
                       src={player.image}
                       alt={player.name}
+                      referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.target.onerror = null;
-                        e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(player.name)}`;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1e293b&color=f59e0b&size=128&font-size=0.4&bold=true`;
                       }}
                     />
                   </div>
@@ -115,10 +116,11 @@ export default function FootballPitch({ manager, onResellPlayer }) {
               <div key={p.id} className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-white/10 shrink-0">
                 <img
                   src={p.image}
+                  referrerPolicy="no-referrer"
                   className="w-8 h-8 rounded-full object-cover"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(p.name)}`;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1e293b&color=f59e0b&size=128&font-size=0.4&bold=true`;
                   }}
                 />
                 <div>
