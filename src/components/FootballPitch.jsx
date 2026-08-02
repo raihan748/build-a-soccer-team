@@ -1,8 +1,75 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Shield, Sparkles, RefreshCw, Trash2, ArrowUpRight } from 'lucide-react';
 import { soundFx } from '../services/audioService';
+
+// Ultra-reliable Inline SVG Avatar generator — 0 network dependency, 100% fail-proof
+function PlayerCardAvatar({ player, size = 56 }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const getPositionColor = (pos) => {
+    if (pos === 'GK') return { bg: '#eab308', text: '#fef08a' }; // Yellow
+    if (['CB', 'LB', 'RB'].includes(pos)) return { bg: '#3b82f6', text: '#bfdbfe' }; // Blue
+    if (['CM', 'CAM', 'CDM', 'RM', 'LM'].includes(pos)) return { bg: '#10b981', text: '#a7f3d0' }; // Emerald
+    return { bg: '#ef4444', text: '#fecaca' }; // Red/FWD
+  };
+
+  const colors = getPositionColor(player.position);
+  const initials = player.name
+    .split(' ')
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'FC';
+
+  // If real image exists and hasn't failed, attempt to render it
+  if (player.image && !imgFailed) {
+    return (
+      <img
+        src={player.image}
+        alt={player.name}
+        referrerPolicy="no-referrer"
+        crossOrigin="anonymous"
+        className="w-full h-full object-cover"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+
+  // Fail-proof Inline SVG Vector Badge
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-black relative select-none">
+      <svg viewBox="0 0 100 100" className="w-full h-full p-1">
+        <defs>
+          <linearGradient id={`pitch-grad-${player.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={colors.bg} stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#0f172a" stopOpacity="0.9" />
+          </linearGradient>
+        </defs>
+        {/* Background Shield */}
+        <circle cx="50" cy="50" r="46" fill={`url(#pitch-grad-${player.id})`} stroke={colors.bg} strokeWidth="2" />
+        {/* Stylized Player Jersey Silhouette */}
+        <path d="M 30 75 C 30 60, 40 52, 50 52 C 60 52, 70 60, 70 75 Z" fill="#1e293b" opacity="0.8" />
+        <circle cx="50" cy="38" r="14" fill="#334155" />
+        {/* Initials Text */}
+        <text
+          x="50"
+          y="56"
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize="20"
+          fontWeight="900"
+          fontFamily="sans-serif"
+          letterSpacing="1"
+        >
+          {initials}
+        </text>
+      </svg>
+    </div>
+  );
+}
 
 export default function FootballPitch({ manager, onResellPlayer }) {
   const { name, crest, formation, squad, budget, squadRating } = manager;
@@ -82,16 +149,7 @@ export default function FootballPitch({ manager, onResellPlayer }) {
                   </button>
 
                   <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-amber-400 bg-slate-900 shadow-glow-gold">
-                    <img
-                      src={player.image}
-                      alt={player.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=1e293b&color=f59e0b&size=128&font-size=0.4&bold=true`;
-                      }}
-                    />
+                    <PlayerCardAvatar player={player} size={56} />
                   </div>
                   <div className="bg-slate-900/90 text-white text-[10px] font-black px-2 py-0.5 rounded-full mt-1 border border-amber-400/50 shadow truncate max-w-[90px]">
                     {player.name.split(' ').pop()} ({player.rating})
@@ -114,15 +172,9 @@ export default function FootballPitch({ manager, onResellPlayer }) {
           <div className="flex gap-2 overflow-x-auto pb-2">
             {squad.slice(11).map((p) => (
               <div key={p.id} className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-white/10 shrink-0">
-                <img
-                  src={p.image}
-                  referrerPolicy="no-referrer"
-                  className="w-8 h-8 rounded-full object-cover"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=1e293b&color=f59e0b&size=128&font-size=0.4&bold=true`;
-                  }}
-                />
+                <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20">
+                  <PlayerCardAvatar player={p} size={32} />
+                </div>
                 <div>
                   <div className="text-xs font-bold text-white">{p.name}</div>
                   <div className="text-[10px] text-amber-400">{p.position} • {p.rating}</div>
