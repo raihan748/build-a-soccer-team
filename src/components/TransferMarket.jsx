@@ -173,13 +173,14 @@ export default function TransferMarket({
                 </div>
 
                 {/* Player Photo */}
-                <div className="relative w-20 h-20 mx-auto my-1 rounded-full overflow-hidden border-2 border-white/20 bg-slate-800 flex items-center justify-center">
+                <div className="relative w-20 h-20 mx-auto my-1 rounded-full overflow-hidden border-2 border-white/20 bg-slate-900 flex items-center justify-center">
                   <img
                     src={player.image}
                     alt={player.name}
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      e.target.src = 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png';
+                      e.target.onerror = null;
+                      e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(player.name)}`;
                     }}
                   />
                 </div>

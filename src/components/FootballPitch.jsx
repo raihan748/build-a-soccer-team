@@ -87,7 +87,8 @@ export default function FootballPitch({ manager, onResellPlayer }) {
                       alt={player.name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        e.target.src = 'https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png';
+                        e.target.onerror = null;
+                        e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(player.name)}`;
                       }}
                     />
                   </div>
@@ -112,7 +113,14 @@ export default function FootballPitch({ manager, onResellPlayer }) {
           <div className="flex gap-2 overflow-x-auto pb-2">
             {squad.slice(11).map((p) => (
               <div key={p.id} className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-white/10 shrink-0">
-                <img src={p.image} className="w-8 h-8 rounded-full object-cover" />
+                <img
+                  src={p.image}
+                  className="w-8 h-8 rounded-full object-cover"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(p.name)}`;
+                  }}
+                />
                 <div>
                   <div className="text-xs font-bold text-white">{p.name}</div>
                   <div className="text-[10px] text-amber-400">{p.position} • {p.rating}</div>
