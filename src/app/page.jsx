@@ -18,6 +18,10 @@ export default function Home() {
   const [stage, setStage] = useState('SETUP'); // 'SETUP', 'DRAFT', 'SIMULATION', 'TROPHY'
   const [isConnecting, setIsConnecting] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED');
+  const [connectionMsg, setConnectionMsg] = useState('');
+  const [hostPeerId, setHostPeerId] = useState('');
+  const [roomCode, setRoomCode] = useState('');
 
   // 80 Random Players Pool for current session
   const [availablePool, setAvailablePool] = useState([]);
@@ -57,6 +61,11 @@ export default function Home() {
     if (payload.stage) setStage(payload.stage);
   };
 
+  const handleStatusChange = (status, msg) => {
+    setConnectionStatus(status);
+    setConnectionMsg(msg);
+  };
+
   // --- START LOCAL GAME ---
   const handleStartLocalGame = (mgrData) => {
     const pool = getRandom80PlayersPool();
@@ -77,32 +86,44 @@ export default function Home() {
   // --- CREATE ONLINE ROOM (HOST) ---
   const handleCreateOnlineRoom = async (hostMgr, code) => {
     setIsConnecting(true);
-    const success = await peerServiceInstance.createRoom(code, handleRemoteState);
+    setRoomCode(code);
+    const result = await peerServiceInstance.createRoom(
+      code,
+      handleRemoteState,
+      null,
+      handleStatusChange
+    );
     setIsConnecting(false);
 
-    if (success) {
+    if (result && result.success) {
       setIsOnline(true);
+      setHostPeerId(result.hostPeerId);
       handleStartLocalGame([
         hostMgr,
         { name: 'Online Guest 2', crest: '🦅', formation: '4-4-2 Classic', budget: 100000000, squad: [], squadRating: 0 },
         { name: 'Online Guest 3', crest: '⚡', formation: '3-5-2 Wingplay', budget: 100000000, squad: [], squadRating: 0 }
       ]);
     } else {
-      alert('Gagal membuat Online Room. Silakan coba kode lain!');
+      alert(`Gagal membuat Online Room: ${result.error || 'Server sibuk'}`);
     }
   };
 
   // --- JOIN ONLINE ROOM (CLIENT) ---
-  const handleJoinOnlineRoom = async (clientMgr, code) => {
+  const handleJoinOnlineRoom = async (clientMgr, targetHostId) => {
     setIsConnecting(true);
-    const success = await peerServiceInstance.joinRoom(code, handleRemoteState);
+    const result = await peerServiceInstance.joinRoom(
+      targetHostId,
+      handleRemoteState,
+      null,
+      handleStatusChange
+    );
     setIsConnecting(false);
 
-    if (success) {
+    if (result && result.success) {
       setIsOnline(true);
       setStage('DRAFT');
     } else {
-      alert('Gagal terhubung ke Room Code. Pastikan Host sudah membuat room!');
+      alert('Gagal terhubung ke Host. Pastikan Host sudah mengeklik Create Room dan menyalin Host ID!');
     }
   };
 
@@ -148,7 +169,7 @@ export default function Home() {
     if (pIdx === -1) return;
 
     const player = mgr.squad[pIdx];
-    mgr.budget += player.price; // Refund cash
+    mgr.budget += player.price;
     mgr.squad.splice(pIdx, 1);
     mgr.squadRating = calcRating(mgr.squad);
 
@@ -196,6 +217,7 @@ export default function Home() {
       peerServiceInstance.destroy();
     }
     setIsOnline(false);
+    setHostPeerId('');
   };
 
   return (
@@ -207,6 +229,11 @@ export default function Home() {
           <span className="font-black text-lg tracking-tight text-white">
             SOCCER MANAGER <span className="text-amber-400">3P</span>
           </span>
+          {isOnline && (
+            <span className="ml-2 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              ONLINE P2P
+            </span>
+          )}
         </div>
 
         {stage !== 'SETUP' && (
@@ -242,6 +269,10 @@ export default function Home() {
           onCreateOnlineRoom={handleCreateOnlineRoom}
           onJoinOnlineRoom={handleJoinOnlineRoom}
           isConnecting={isConnecting}
+          connectionStatus={connectionStatus}
+          connectionMsg={connectionMsg}
+          hostPeerId={hostPeerId}
+          roomCode={roomCode}
         />
       )}
 

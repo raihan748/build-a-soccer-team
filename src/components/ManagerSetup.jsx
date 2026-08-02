@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, Trophy, Users, Globe, Play, Sparkles, User, RefreshCw } from 'lucide-react';
+import { Shield, Trophy, Users, Globe, Play, Sparkles, User, RefreshCw, Copy, Check } from 'lucide-react';
 import { soundFx } from '../services/audioService';
 
 const CRESTS = ['🛡️', '👑', '⚡', '🦅', '🦁', '🐉', '🔥', '🏆', '⭐'];
@@ -12,10 +12,20 @@ const FORMATIONS = [
   { name: '4-2-3-1 Tactical', def: 4, mid: 5, fwd: 1 },
 ];
 
-export default function ManagerSetup({ onStartLocalGame, onCreateOnlineRoom, onJoinOnlineRoom, isConnecting }) {
+export default function ManagerSetup({
+  onStartLocalGame,
+  onCreateOnlineRoom,
+  onJoinOnlineRoom,
+  isConnecting,
+  connectionStatus,
+  connectionMsg,
+  hostPeerId,
+  roomCode
+}) {
   const [playMode, setPlayMode] = useState('local'); // 'local', 'host', 'join'
-  const [roomCode, setRoomCode] = useState('');
-  
+  const [inputCode, setInputCode] = useState('');
+  const [copied, setCopied] = useState(false);
+
   // 3 Managers Data for Local Mode
   const [managers, setManagers] = useState([
     { name: 'Manager Alpha', crest: '🦁', color: '#f59e0b', formation: '4-3-3 Attacking' },
@@ -35,12 +45,20 @@ export default function ManagerSetup({ onStartLocalGame, onCreateOnlineRoom, onJ
     if (playMode === 'local') {
       onStartLocalGame(managers);
     } else if (playMode === 'host') {
-      const code = roomCode.trim() || Math.floor(100000 + Math.random() * 900000).toString();
+      const code = inputCode.trim() || Math.floor(100000 + Math.random() * 900000).toString();
       onCreateOnlineRoom(managers[0], code);
     } else if (playMode === 'join') {
-      if (!roomCode.trim()) return alert('Masukkan 6 Digit Kode Room!');
-      onJoinOnlineRoom(managers[0], roomCode.trim());
+      if (!inputCode.trim()) return alert('Masukkan Room Code / Host ID!');
+      onJoinOnlineRoom(managers[0], inputCode.trim());
     }
+  };
+
+  const copyHostLink = () => {
+    soundFx.playClick();
+    const fullId = hostPeerId || roomCode;
+    navigator.clipboard.writeText(fullId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -58,6 +76,21 @@ export default function ManagerSetup({ onStartLocalGame, onCreateOnlineRoom, onJ
           Multiplayer 3 Player Transfer Market ("Siapa Cepat Dia Dapat"), Squad Building, & Live 2D Tactical Showdown!
         </p>
       </div>
+
+      {/* Connection Live Status Indicator */}
+      {connectionStatus && connectionStatus !== 'DISCONNECTED' && (
+        <div className={`p-4 rounded-2xl mb-6 text-center border font-bold text-sm flex items-center justify-center gap-2 ${
+          connectionStatus === 'CONNECTED' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+          connectionStatus === 'CONNECTING' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse' :
+          'bg-red-500/20 text-red-300 border-red-500/40'
+        }`}>
+          <div className={`w-3 h-3 rounded-full ${
+            connectionStatus === 'CONNECTED' ? 'bg-emerald-400 animate-ping' :
+            connectionStatus === 'CONNECTING' ? 'bg-amber-400 animate-bounce' : 'bg-red-400'
+          }`} />
+          <span>{connectionMsg || connectionStatus}</span>
+        </div>
+      )}
 
       {/* Mode Switcher */}
       <div className="grid grid-cols-3 gap-3 mb-8 glass-panel p-2 rounded-2xl border border-white/10">
@@ -99,19 +132,37 @@ export default function ManagerSetup({ onStartLocalGame, onCreateOnlineRoom, onJ
         </button>
       </div>
 
+      {/* Host ID Display & Copy Button */}
+      {playMode === 'host' && hostPeerId && (
+        <div className="glass-panel p-5 rounded-2xl mb-8 border border-cyan-500/40 text-center bg-cyan-950/20">
+          <p className="text-xs font-extrabold text-cyan-400 uppercase mb-2">KODE HOST BERHASIL DIBUAT! SHARE KODE INI KE TEMAN LU:</p>
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-mono text-2xl font-black text-white bg-slate-900 px-4 py-2 rounded-xl border border-cyan-500/50">
+              {hostPeerId}
+            </span>
+            <button
+              onClick={copyHostLink}
+              className="bg-cyan-500 hover:bg-cyan-400 text-black font-bold p-2.5 rounded-xl transition-transform active:scale-95 flex items-center gap-1.5 text-xs"
+            >
+              {copied ? <Check className="w-4 h-4 text-black" /> : <Copy className="w-4 h-4" />}
+              <span>{copied ? 'COPIED!' : 'COPY KODE'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Room Code Input for Host/Join */}
       {(playMode === 'host' || playMode === 'join') && (
         <div className="glass-panel p-6 rounded-2xl mb-8 border border-cyan-500/30 text-center">
           <label className="block text-sm font-semibold text-cyan-300 mb-2">
-            {playMode === 'host' ? 'KODE ROOM KAMU (BISA CUSTOM / RANDOM):' : 'MASUKKAN KODE ROOM FRIEND (6 DIGIT):'}
+            {playMode === 'host' ? 'KODE ROOM HOST (MISAL: GOAL99):' : 'MASUKKAN ROOM CODE / HOST ID DARI TEMAN:'}
           </label>
           <input
             type="text"
-            maxLength={6}
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            placeholder="KODE: GOAL99"
-            className="w-full max-w-xs text-center text-3xl font-mono font-black tracking-widest bg-slate-900/80 text-white border-2 border-cyan-500/50 rounded-xl py-3 focus:outline-none focus:border-cyan-400"
+            value={inputCode}
+            onChange={(e) => setInputCode(e.target.value)}
+            placeholder="CONTOH: GOAL99 atau SOCMGR-..."
+            className="w-full max-w-md text-center text-xl font-mono font-black tracking-wider bg-slate-900/80 text-white border-2 border-cyan-500/50 rounded-xl py-3 focus:outline-none focus:border-cyan-400"
           />
         </div>
       )}
@@ -123,8 +174,6 @@ export default function ManagerSetup({ onStartLocalGame, onCreateOnlineRoom, onJ
             key={idx}
             className="glass-panel p-5 rounded-2xl border border-white/10 relative overflow-hidden group hover:border-amber-500/40 transition-all"
           >
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-500/10 to-transparent rounded-bl-full pointer-events-none" />
-            
             <div className="flex items-center gap-2 mb-4">
               <span className="text-2xl">{mgr.crest}</span>
               <h3 className="font-extrabold text-lg text-white">Player {idx + 1} Profile</h3>
