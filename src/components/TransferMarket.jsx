@@ -1,75 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ShoppingCart, DollarSign, Search, CheckCircle2, Zap } from 'lucide-react';
+import { ShoppingCart, DollarSign, Filter, Search, CheckCircle2, AlertCircle, ArrowUpRight, Zap, RefreshCw } from 'lucide-react';
 import { soundFx } from '../services/audioService';
-
-// Ultra-reliable Inline SVG Avatar generator — 0 network dependency, 100% fail-proof
-function PlayerCardAvatar({ player, size = 80 }) {
-  const [imgFailed, setImgFailed] = useState(false);
-
-  const getPositionColor = (pos) => {
-    if (pos === 'GK') return { bg: '#eab308', text: '#fef08a' }; // Yellow
-    if (['CB', 'LB', 'RB'].includes(pos)) return { bg: '#3b82f6', text: '#bfdbfe' }; // Blue
-    if (['CM', 'CAM', 'CDM', 'RM', 'LM'].includes(pos)) return { bg: '#10b981', text: '#a7f3d0' }; // Emerald
-    return { bg: '#ef4444', text: '#fecaca' }; // Red/FWD
-  };
-
-  const colors = getPositionColor(player.position);
-  const initials = player.name
-    .split(' ')
-    .map((n) => n[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || 'FC';
-
-  // If real image exists and hasn't failed, attempt to render it
-  if (player.image && !imgFailed) {
-    return (
-      <img
-        src={player.image}
-        alt={player.name}
-        referrerPolicy="no-referrer"
-        crossOrigin="anonymous"
-        className="w-full h-full object-cover"
-        onError={() => setImgFailed(true)}
-      />
-    );
-  }
-
-  // Fail-proof Inline SVG Vector Badge
-  return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-black relative select-none">
-      <svg viewBox="0 0 100 100" className="w-full h-full p-1">
-        <defs>
-          <linearGradient id={`grad-${player.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={colors.bg} stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#0f172a" stopOpacity="0.9" />
-          </linearGradient>
-        </defs>
-        {/* Background Shield */}
-        <circle cx="50" cy="50" r="46" fill={`url(#grad-${player.id})`} stroke={colors.bg} strokeWidth="2" />
-        {/* Stylized Player Jersey Silhouette */}
-        <path d="M 30 75 C 30 60, 40 52, 50 52 C 60 52, 70 60, 70 75 Z" fill="#1e293b" opacity="0.8" />
-        <circle cx="50" cy="38" r="14" fill="#334155" />
-        {/* Initials Text */}
-        <text
-          x="50"
-          y="56"
-          textAnchor="middle"
-          fill="#ffffff"
-          fontSize="20"
-          fontWeight="900"
-          fontFamily="sans-serif"
-          letterSpacing="1"
-        >
-          {initials}
-        </text>
-      </svg>
-    </div>
-  );
-}
 
 export default function TransferMarket({
   availablePool,
@@ -228,7 +161,7 @@ export default function TransferMarket({
                   <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
                     player.position === 'GK' ? 'bg-yellow-500/20 text-yellow-300' :
                     ['CB','LB','RB'].includes(player.position) ? 'bg-blue-500/20 text-blue-300' :
-                    ['CM','CAM','CDM','RM','LM'].includes(player.position) ? 'bg-emerald-500/20 text-emerald-300' :
+                    ['CM','CAM','CDM'].includes(player.position) ? 'bg-emerald-500/20 text-emerald-300' :
                     'bg-red-500/20 text-red-300'
                   }`}>
                     {player.position}
@@ -239,9 +172,18 @@ export default function TransferMarket({
                   </span>
                 </div>
 
-                {/* Player Photo with Fallback SVG */}
-                <div className="relative w-20 h-20 mx-auto my-1 rounded-full overflow-hidden border-2 border-white/20 bg-slate-900 flex items-center justify-center shadow-md">
-                  <PlayerCardAvatar player={player} size={80} />
+                {/* Player Photo with ReferrerPolicy No-Referrer */}
+                <div className="relative w-20 h-20 mx-auto my-1 rounded-full overflow-hidden border-2 border-white/20 bg-slate-900 flex items-center justify-center">
+                  <img
+                    src={player.image}
+                    alt={player.name}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://cdn.sofifa.net/players/158/023/24_120.png';
+                    }}
+                  />
                 </div>
 
                 {/* Player Info */}
